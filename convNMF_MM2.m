@@ -1,0 +1,59 @@
+function [W,H,cost,time] = convNMF_MM2(V,W,H,V_hat,N_iter_max,beta)
+% Computes the convolutive NMF using the second MM approach MM2
+%
+% Input :
+% V : matrix to be approximated
+% W,H : latent factors ( W(t) is W(:,:,t+1) )
+% V_hat : approximation of V
+% N_iter_max : maximum number of iterations
+% beta : parameter of the beta-divergence
+% Author : Dylan Fagot
+
+tic
+cost = zeros(1,N_iter_max); cost(1) = eval_D_beta(V,V_hat,beta);
+[M,K,T] = size(W); [~,N] = size(V);
+time = zeros(1,N_iter_max); time(1) = toc;
+
+for k=2:N_iter_max
+    %% Sequential update of H
+    for n=1:N
+        
+        num = zeros(K,1); denom = num;
+        if n<=N-T+1
+            for n_prime = n:n+T-1 
+                num = num + W(:,:,n_prime-n+1)'*((V(:,n_prime)+eps).*(V_hat(:,n_prime)+eps).^(beta-2));
+                denom = denom + W(:,:,n_prime-n+1)'*(V_hat(:,n_prime)+eps).^(beta-1);
+            end
+        else
+            for n_prime = n:N
+                num = num + W(:,:,n_prime-n+1)'*((V(:,n_prime)+eps).*(V_hat(:,n_prime)+eps).^(beta-2));
+                denom = denom + W(:,:,n_prime-n+1)'*(V_hat(:,n_prime)+eps).^(beta-1);
+            end
+        end
+        
+        H(:,n) = H(:,n).*(num./denom).^gamma_beta(beta);
+
+    end
+    
+     V_hat = zeros(M,N);
+     for t=0:T-1
+         V_hat = V_hat + W(:,:,t+1)*shift_t(H,t);
+     end
+    
+    %% Update of W
+    
+    for t=0:T-1
+        W_t_old = W(:,:,t+1);
+        H_shift_t = shift_t(H,t);
+        W(:,:,t+1) = W(:,:,t+1).*(((((V+eps).*(V_hat+eps).^(beta-2))*H_shift_t')./((V_hat+eps).^(beta-1)*H_shift_t'))).^gamma_beta(beta);
+        V_hat = max(V_hat + (W(:,:,t+1)-W_t_old)*H_shift_t,0); 
+        % max(.,0) ensures the nonnegativity
+    end
+    
+    [W,H] = renormalize_convNMF(W,H);
+    
+    time(k) = toc;
+    cost(k) = eval_D_beta(V,V_hat,beta);
+    disp(['MM2, Iteration ',num2str(k),' , cost = ',num2str(cost(k))])
+end
+end
